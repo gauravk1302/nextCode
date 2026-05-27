@@ -55,7 +55,7 @@ async function handleGithubSignIn() {
 
 const SignInFormClient = () => {
   return (
-    <Card className="w-full max-w-lg rounded-3xl border border-emerald-500/20 bg-zinc-950/95 backdrop-blur-xl">
+    <Card className="w-full max-w-md bg-white/5 border border-white/10 backdrop-blur-sm shadow-2xl">
       <CardHeader className="space-y-3 pb-6">
         <CardTitle className="text-center text-3xl font-bold tracking-tight text-white">
           Sign In
@@ -66,7 +66,7 @@ const SignInFormClient = () => {
         </CardDescription>
       </CardHeader>
 
-      <CardContent className="grid gap-4">
+      <CardContent className="grid gap-4 pb-2">
         <form action={handleGoogleSignIn}>
           <Button
             type="submit"
@@ -88,22 +88,18 @@ const SignInFormClient = () => {
             <span>Sign in with GitHub</span>
           </Button>
         </form>
-      </CardContent>
 
-      <CardFooter className="px-6 pt-5 bg-transparent border-0 flex justify-center">
+        {/* Separator line */}
+        <div className="border-t border-white/10 " />
+      </CardContent>
+      <CardFooter className="px-6 pt-0 pb-6 bg-transparent border-0 flex justify-center">
         <p className="max-w-md text-center text-sm leading-6 text-zinc-400">
           By signing in, you agree to our{" "}
-          <a
-            href="#"
-            className="text-emerald-400 underline underline-offset-4"
-          >
+          <a href="#" className="text-emerald-400 underline underline-offset-4">
             Terms of Service
           </a>{" "}
           and{" "}
-          <a
-            href="#"
-            className="text-emerald-400 underline underline-offset-4"
-          >
+          <a href="#" className="text-emerald-400 underline underline-offset-4">
             Privacy Policy
           </a>
           .

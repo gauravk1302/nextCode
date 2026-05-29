@@ -41,6 +41,8 @@ export function Header() {
                       loading="eager"
                       height={60}
                       width={60}
+                      style={{ width: "auto", height: "40px" }}
+
                     />
 
                     <span className="hidden sm:block font-extrabold text-lg">

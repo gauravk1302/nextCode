@@ -33,7 +33,7 @@ export default async function RootLayout({
       suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col">
-        <SessionProvider session={session}>
+        <SessionProvider>
           <ThemeProvider
             attribute="class"
             defaultTheme="system"

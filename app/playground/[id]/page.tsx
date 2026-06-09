@@ -1,27 +1,67 @@
-"use client"
-import { usePlayground } from '@/modules/playground/hooks/usePlayground';
-import { useParams } from 'next/navigation'
-import React from 'react'
+"use client";
+import { usePlayground } from "@/modules/playground/hooks/usePlayground";
+import { useParams } from "next/navigation";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import React from "react";
+import { SidebarInset, SidebarTrigger } from "@/components/ui/sidebar";
+import { Separator } from "@/components/ui/separator";
+import { TemplateFileTree } from "@/modules/playground/components/playground-explorer";
 
 const MainPagePlayground = () => {
-    const {id} = useParams<{id:string}>();
+  const { id } = useParams<{ id: string }>();
 
-    const {playgroundData,
+  const {
+    playgroundData,
     templateData,
     isLoading,
     error,
     loadPlayground,
-    saveTemplateData,} = usePlayground(id)
+    saveTemplateData,
+  } = usePlayground(id);
 
-    console.log("templateData",templateData)
-    console.log("playgroundData",playgroundData)
+  console.log("templateData", templateData);
+  console.log("playgroundData", playgroundData);
+
+  const activeFile = templateData?.[0];
   return (
-    <div> 
-        <span className=' text-[20px]'>Params: {id}</span>
-    </div>
-  )
-}
+    <TooltipProvider>
+      <>
+        <TemplateFileTree
+          data={templateData}
+          onFileSelect={() => {}}
+          selectedFile={activeFile}
+          title="File Explorer"
+          onAddFile={() => {}}
+          onAddFolder={() => {}}
+          onDeleteFile={() => {}}
+          onDeleteFolder={() => {}}
+          onRenameFile={() => {}}
+          onRenameFolder={() => {}}
+        />
+        <SidebarInset>
+          <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4">
+            <SidebarTrigger className="-ml-1" />
+            <Separator className="mr-2 h-4 w-px" />
+          </header>
 
-export default MainPagePlayground
+          <div className="flex flex-1 items-center gap-2">
+            <div className="flex flex-col flex-1">
+              <h1 className="text-sm font-medium">
+                {playgroundData?.title || "Code Playground"}
+              </h1>
+            </div>
+          </div>
+        </SidebarInset>
+      </>
+    </TooltipProvider>
+  );
+};
 
-//based onn this id we are going to fetch the user data of playround which will give us the template which will give us the template files/folder path and then  with the help of the path-to-json we will render the template on the monaco editor 
+export default MainPagePlayground;
+
+//based onn this id we are going to fetch the user data of playround which will give us the template which will give us the template files/folder path and then  with the help of the path-to-json we will render the template on the monaco editor

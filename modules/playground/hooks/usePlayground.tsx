@@ -1,3 +1,5 @@
+//here we are managing the template files and template folder side bar of the playground  
+
 import { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
 
@@ -19,7 +21,7 @@ interface UsePlaygroundReturn {
   //Here we are basically going to pass the id and this ID should going to call our backend and get the data for us
   saveTemplateData: (data: TemplateFolder) => Promise<void>;
 }
-// Here we are basically going to pass the id and this ID should going to call our backend and get the
+// Here we are basically going to pass the id and this ID should going to call our backend and get the data 
 
 export const usePlayground = (id: string): UsePlaygroundReturn => {
   const [playgroundData, setPlaygroundData] = useState<PlaygroundData | null>(

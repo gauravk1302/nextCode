@@ -53,7 +53,6 @@ interface TemplateFile {
   content: string;
 }
 
-
 interface TemplateFolder {
   folderName: string;
   items: (TemplateFile | TemplateFolder)[];
@@ -68,18 +67,18 @@ interface TemplateFileTreeProps {
   title?: string;
   onAddFile?: (file: TemplateFile, parentPath: string) => void;
   onAddFolder?: (folder: TemplateFolder, parentPath: string) => void;
-  onDeleteFile?:  (file: TemplateFile, parentPath: string) => void;
+  onDeleteFile?: (file: TemplateFile, parentPath: string) => void;
   onDeleteFolder?: (folder: TemplateFolder, parentPath: string) => void;
   onRenameFile?: (
     file: TemplateFile,
     newFilename: string,
     newExtension: string,
-    parentPath: string
+    parentPath: string,
   ) => void;
   onRenameFolder?: (
     folder: TemplateFolder,
     newFolderName: string,
-    parentPath: string
+    parentPath: string,
   ) => void;
 }
 
@@ -137,7 +136,7 @@ export function TemplateFileTree({
         <SidebarGroup>
           <SidebarGroupLabel>{title}</SidebarGroupLabel>
           <DropdownMenu>
-            <DropdownMenuTrigger>
+            <DropdownMenuTrigger asChild>
               <SidebarGroupAction>
                 <Plus className="h-4 w-4" />
               </SidebarGroupAction>
@@ -222,12 +221,12 @@ interface TemplateNodeProps {
     file: TemplateFile,
     newFilename: string,
     newExtension: string,
-    parentPath: string
+    parentPath: string,
   ) => void;
   onRenameFolder?: (
     folder: TemplateFolder,
     newFolderName: string,
-    parentPath: string
+    parentPath: string,
   ) => void;
 }
 
@@ -295,7 +294,7 @@ function TemplateNode({
           </SidebarMenuButton>
 
           <DropdownMenu>
-            <DropdownMenuTrigger>
+            <DropdownMenuTrigger asChild>
               <Button
                 variant="ghost"
                 size="icon"
@@ -400,19 +399,19 @@ function TemplateNode({
         <Collapsible
           open={isOpen}
           onOpenChange={setIsOpen}
-          className="group/collapsible [&[data-state=open]>div>button>svg:first-child]:rotate-90"
+          className="group/collapsible [&[data-open]>div>button>svg:first-child]:rotate-90"
         >
           <div className="flex items-center group">
-            <CollapsibleTrigger>
-              <SidebarMenuButton className="flex-1">
-                <ChevronRight className="transition-transform" />
-                <Folder className="h-4 w-4 mr-2 shrink-0" />
-                <span>{folderName}</span>
+            <CollapsibleTrigger asChild>
+              <SidebarMenuButton className="flex-1 min-w-0">
+                <ChevronRight className="shrink-0 transition-transform" />
+                <Folder className="h-4 w-4 shrink-0" />
+                <span className="truncate">{folderName}</span>
               </SidebarMenuButton>
             </CollapsibleTrigger>
 
             <DropdownMenu>
-              <DropdownMenuTrigger >
+              <DropdownMenuTrigger asChild>
                 <Button
                   variant="ghost"
                   size="icon"

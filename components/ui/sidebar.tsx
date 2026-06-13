@@ -24,6 +24,9 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { PanelLeftIcon } from "lucide-react"
+import { Slot } from "@radix-ui/react-slot"
+
+
 
 const SIDEBAR_COOKIE_NAME = "sidebar_state"
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7
@@ -417,8 +420,10 @@ function SidebarGroupLabel({
 function SidebarGroupAction({
   className,
   render,
+  asChild,
+  children,
   ...props
-}: useRender.ComponentProps<"button"> & React.ComponentProps<"button">) {
+}: useRender.ComponentProps<"button"> & React.ComponentProps<"button"> & { asChild?: boolean }) {
   return useRender({
     defaultTagName: "button",
     props: mergeProps<"button">(
@@ -430,7 +435,7 @@ function SidebarGroupAction({
       },
       props
     ),
-    render,
+    render: asChild ? <Slot>{children}</Slot> : render,
     state: {
       slot: "sidebar-group-action",
       sidebar: "group-action",

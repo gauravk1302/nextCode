@@ -1,4 +1,4 @@
-// here in this file we have handled the files things using zustand like createFile openFile deletefile logic things 
+// here in this file we have handled the files things using zustand like createFile openFile handleAddFile handleAddFolder handleDeleteFile handleDeletefolder closeAllFilesInFolder handleRenameFile handleRenameFolder updateFileContent deletefile logic things 
 import { create } from "zustand";
 import { toast } from "sonner";
 

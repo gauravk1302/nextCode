@@ -13,6 +13,7 @@
     "@base-ui/react": "^1.5.0",
     "@monaco-editor/react": "^4.7.0",
     "@neondatabase/serverless": "^1.1.0",
+    "@radix-ui/react-slot": "^1.2.5",
     "@webcontainer/api": "^1.6.4",
     "@xterm/xterm": "^6.0.0",
     "class-variance-authority": "^0.7.1",

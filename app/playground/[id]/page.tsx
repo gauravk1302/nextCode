@@ -31,6 +31,8 @@ import {
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { writeFileSync } from "fs";
 import PlaygroundEditor from "@/modules/playground/components/playground-editor";
+import { useWebContainer } from "@/modules/webcontainers/hooks/useWebContainer";
+import WebContainerPreview from "@/modules/webcontainers/components/webContainerPreview";
 
 const MainPagePlayground = () => {
   const { id } = useParams<{ id: string }>();
@@ -56,6 +58,14 @@ const MainPagePlayground = () => {
     openFile,
     openFiles,
   } = useFileExplorer();
+
+    const {
+    serverUrl,
+    isLoading: containerLoading,
+    error: containerError,
+    instance,
+    writeFileSync,
+  } = useWebContainer({ templateData });
 
   useEffect(() => {
     setPlaygroundId(id);
@@ -221,6 +231,25 @@ const MainPagePlayground = () => {
                         onContentChange={() => {}}
                       />
                     </ResizablePanel>
+ {isPreviewVisible && (
+                      <>
+                        <ResizableHandle />
+                        <ResizablePanel defaultSize={50}>
+                          <WebContainerPreview
+                            templateData={templateData}
+                            instance={instance}
+                            writeFileSync={writeFileSync}
+                            isLoading={containerLoading}
+                            error={containerError}
+                            serverUrl={serverUrl!}
+                            forceResetup={false}
+                          />
+                        </ResizablePanel>
+                      </>
+                    )}
+
+
+
                   </ResizablePanelGroup>
                 </div>
               </div>

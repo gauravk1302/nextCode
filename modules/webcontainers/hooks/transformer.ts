@@ -1,7 +1,3 @@
-// This transformer is transforming the entire folder structure, the entire template structure to the web container structure.
-
-
-
 interface TemplateItem {
   filename: string;
   fileExtension: string;

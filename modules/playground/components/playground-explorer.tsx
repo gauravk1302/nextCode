@@ -135,23 +135,26 @@ export function TemplateFileTree({
       <SidebarContent>
         <SidebarGroup>
           <SidebarGroupLabel>{title}</SidebarGroupLabel>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <SidebarGroupAction>
-                <Plus className="h-4 w-4" />
-              </SidebarGroupAction>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={handleAddRootFile}>
-                <FilePlus className="h-4 w-4 mr-2" />
-                New File
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={handleAddRootFolder}>
-                <FolderPlus className="h-4 w-4 mr-2" />
-                New Folder
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <div className="absolute right-3 top-3">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-3 w-3">
+                  <Plus className="h-3 w-3" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={handleAddRootFile}>
+                  <FilePlus className="h-4 w-4 mr-2" />
+                  New File
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleAddRootFolder}>
+                  <FolderPlus className="h-4 w-4 mr-2" />
+                  New Folder
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+
           <SidebarGroupContent>
             <SidebarMenu>
               {isRootFolder ? (

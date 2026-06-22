@@ -24,7 +24,6 @@ import {
 import LoadingStep from "@/modules/playground/components/loader";
 import { PlaygroundEditor } from "@/modules/playground/components/playground-editor";
 import { TemplateFileTree } from "@/modules/playground/components/playground-explorer";
-import { useAISuggestions } from "@/modules/playground/hooks/useAISuggestion";
 import { useFileExplorer } from "@/modules/playground/hooks/useFileExplorer";
 import { usePlayground } from "@/modules/playground/hooks/usePlayground";
 import { findFilePath } from "@/modules/playground/lib";
@@ -43,29 +42,47 @@ import {
   X,
 } from "lucide-react";
 import { useParams } from "next/navigation";
-import React, {
-  useCallback,
-  useEffect,
-  useReducer,
-  useRef,
-  useState,
-} from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import dynamic from "next/dynamic";
 import ToggleAI from "@/modules/playground/components/toggle-ai";
+
 const WebContainerPreview = dynamic(
   () => import("@/modules/webcontainers/components/webContainerPreview"),
   { ssr: false },
 );
 
+function buildFileContext(
+  items: any[],
+  currentPath = "",
+): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const item of items) {
+    if (item.folderName && item.items) {
+      const folderPath = currentPath
+        ? `${currentPath}/${item.folderName}`
+        : item.folderName;
+      Object.assign(result, buildFileContext(item.items, folderPath));
+    } else if (item.filename) {
+      const filePath = currentPath
+        ? `${currentPath}/${item.filename}${item.fileExtension ? `.${item.fileExtension}` : ""}`
+        : `${item.filename}${item.fileExtension ? `.${item.fileExtension}` : ""}`;
+      result[filePath] = item.content || "";
+    }
+  }
+  return result;
+}
+
 const MainPlaygroundPage = () => {
   const { id } = useParams<{ id: string }>();
   const [isPreviewVisible, setIsPreviewVisible] = useState(true);
+  const [saveCount, setSaveCount] = useState(0);
+
+  // Naya simple state strictly Toggle aur Editor ko control karne ke liye
+  const [isAIEnabled, setIsAIEnabled] = useState(true);
 
   const { playgroundData, templateData, isLoading, error, saveTemplateData } =
     usePlayground(id);
-
-  const aiSuggestions = useAISuggestions();
 
   const {
     setTemplateData,
@@ -77,7 +94,6 @@ const MainPlaygroundPage = () => {
     closeFile,
     openFile,
     openFiles,
-
     handleAddFile,
     handleAddFolder,
     handleDeleteFile,
@@ -86,18 +102,132 @@ const MainPlaygroundPage = () => {
     handleRenameFolder,
     updateFileContent,
   } = useFileExplorer();
-  const [lastSaveTime, setLastSaveTime] = useState(0);
 
   const {
     serverUrl,
     isLoading: containerLoading,
+    loadingStep,
     error: containerError,
     instance,
     writeFileSync,
-    // @ts-ignore
+    destroy,
   } = useWebContainer({ templateData: templateData! });
 
   const lastSyncedContent = useRef<Map<string, string>>(new Map());
+
+  const fileContext = templateData
+    ? buildFileContext((templateData as any).items || [])
+    : {};
+
+  // FIXED: Syncing both WebContainer FS and Monaco Editor/React State
+  
+// FIXED: Bulletproof State Sync for Monaco Editor & WebContainer
+  const handleApplyFileChanges = useCallback(
+    async (fileChanges: Record<string, string>) => {
+      if (!instance?.fs) {
+        toast.error("WebContainer not ready");
+        return;
+      }
+      try {
+        const { 
+          templateData: latestTemplateData, 
+          openFiles: currentOpenFiles, 
+          setTemplateData: setStoreTemplateData, 
+          setOpenFiles: setStoreOpenFiles 
+        } = useFileExplorer.getState();
+        
+        if (!latestTemplateData) return;
+
+        let updatedTemplateData = JSON.parse(JSON.stringify(latestTemplateData));
+        let updatedOpenFiles = [...currentOpenFiles];
+
+        for (const [rawFilePath, content] of Object.entries(fileChanges)) {
+          // 1. Path cleaning
+          let cleanPath = rawFilePath.trim();
+          if (cleanPath.startsWith('/')) cleanPath = cleanPath.substring(1);
+          if (cleanPath.startsWith('./')) cleanPath = cleanPath.substring(2);
+
+          const pathParts = cleanPath.split("/");
+          const filenameWithExt = pathParts.pop() || "";
+          const folderPath = pathParts.join("/");
+
+          // 2. Auto-mkdir in WebContainer (Prevents ENOENT crashes)
+          if (folderPath) {
+            try {
+              await instance.fs.mkdir(folderPath, { recursive: true });
+            } catch (e) {
+              // Ignore directory exists error
+            }
+          }
+
+          // 3. Write new code to WebContainer FS (Updates Preview)
+          await instance.fs.writeFile(cleanPath, content);
+
+          // 4. Extract filename and extension
+          const lastDotIndex = filenameWithExt.lastIndexOf(".");
+          const filename = lastDotIndex !== -1 ? filenameWithExt.substring(0, lastDotIndex) : filenameWithExt;
+          const fileExtension = lastDotIndex !== -1 ? filenameWithExt.substring(lastDotIndex + 1) : "";
+
+          // 5. 🔥 INDEPENDENT OPEN FILES SYNC (The Fix for Editor Reverting) 🔥
+          // Pehle hum exact path se match karenge
+          let openFileIndex = updatedOpenFiles.findIndex((f) => {
+            const p = findFilePath(f, latestTemplateData);
+            return p === cleanPath || p === `/${cleanPath}`;
+          });
+
+          // Fallback: Agar exact path nahi mila, toh filename se dhoondhenge
+          if (openFileIndex === -1) {
+            openFileIndex = updatedOpenFiles.findIndex(
+              (f) => f.filename === filename && f.fileExtension === fileExtension
+            );
+          }
+
+          // Agar file open hai, toh forcefully uska content update karo Monaco ke liye
+          if (openFileIndex !== -1) {
+            updatedOpenFiles[openFileIndex] = {
+              ...updatedOpenFiles[openFileIndex],
+              content: content,
+              originalContent: content, 
+              hasUnsavedChanges: false,
+            };
+          }
+
+          // 6. Update File Explorer Tree state
+          const updateItemInTree = (items: any[], parts: string[]): any[] => {
+            if (parts.length === 0) {
+              return items.map((item) => {
+                if (item.filename === filename && item.fileExtension === fileExtension) {
+                  return { ...item, content };
+                }
+                return item;
+              });
+            }
+            const currentFolder = parts[0];
+            return items.map((item) => {
+              if (item.folderName === currentFolder) {
+                return { ...item, items: updateItemInTree(item.items, parts.slice(1)) };
+              }
+              return item;
+            });
+          };
+
+          updatedTemplateData.items = updateItemInTree(updatedTemplateData.items, pathParts);
+        }
+
+        // 7. Apply to Zustand store and trigger re-renders
+        setStoreTemplateData(updatedTemplateData);
+        setStoreOpenFiles(updatedOpenFiles);
+        await saveTemplateData(updatedTemplateData);
+
+        setSaveCount((prev) => prev + 1);
+        toast.success(`Applied ${Object.keys(fileChanges).length} file change(s)`);
+      } catch (err) {
+        console.error("Apply changes error:", err);
+        toast.error("Failed to apply changes");
+      }
+    },
+    [instance, saveTemplateData],
+  );
 
   useEffect(() => {
     setPlaygroundId(id);
@@ -109,7 +239,6 @@ const MainPlaygroundPage = () => {
     }
   }, [templateData, setTemplateData, openFiles.length]);
 
-  // Create wrapper functions that pass saveTemplateData
   const wrappedHandleAddFile = useCallback(
     (newFile: TemplateFile, parentPath: string) => {
       return handleAddFile(
@@ -192,7 +321,7 @@ const MainPlaygroundPage = () => {
         const filePath = findFilePath(activeFile, latestTemplateData);
         if (!filePath) return;
         await instance.fs.writeFile(filePath, value);
-        setLastSaveTime(Date.now());
+        setSaveCount((prev) => prev + 1);
       }, 300);
     },
     [activeFileId, activeFile, instance, updateFileContent],
@@ -208,7 +337,6 @@ const MainPlaygroundPage = () => {
       if (!targetFileId) return;
 
       const fileToSave = openFiles.find((f) => f.id === targetFileId);
-
       if (!fileToSave) return;
 
       const latestTemplateData = useFileExplorer.getState().templateData;
@@ -227,7 +355,6 @@ const MainPlaygroundPage = () => {
           JSON.stringify(latestTemplateData),
         );
 
-        // FIX 1: Renamed this inner function so it doesn't conflict with your hook's updateFileContent
         // @ts-ignore
         const recursivelyUpdateItems = (items: any[]) =>
           // @ts-ignore
@@ -242,11 +369,11 @@ const MainPlaygroundPage = () => {
             }
             return item;
           });
+
         updatedTemplateData.items = recursivelyUpdateItems(
           updatedTemplateData.items,
         );
 
-        // FIX 2: Correctly syncing with WebContainer using instance.fs directly
         if (instance && instance.fs) {
           await instance.fs.writeFile(filePath, fileToSave.content);
           lastSyncedContent.current.set(fileToSave.id, fileToSave.content);
@@ -254,8 +381,8 @@ const MainPlaygroundPage = () => {
 
         await saveTemplateData(updatedTemplateData);
         setTemplateData(updatedTemplateData);
+        setSaveCount((prev) => prev + 1);
 
-        // Update open files
         const updatedOpenFiles = openFiles.map((f) =>
           f.id === targetFileId
             ? {
@@ -282,7 +409,7 @@ const MainPlaygroundPage = () => {
     [
       activeFileId,
       openFiles,
-      instance, // Removed writeFileSync from dependencies here
+      instance,
       saveTemplateData,
       setTemplateData,
       setOpenFiles,
@@ -291,12 +418,10 @@ const MainPlaygroundPage = () => {
 
   const handleSaveAll = async () => {
     const unsavedFiles = openFiles.filter((f) => f.hasUnsavedChanges);
-
     if (unsavedFiles.length === 0) {
       toast.info("No unsaved changes");
       return;
     }
-
     try {
       await Promise.all(unsavedFiles.map((f) => handleSave(f.id)));
       toast.success(`Saved ${unsavedFiles.length} file(s)`);
@@ -331,7 +456,6 @@ const MainPlaygroundPage = () => {
     );
   }
 
-  // Loading state
   if (isLoading) {
     return (
       <div className="flex flex-col items-center justify-center h-[calc(100vh-4rem)] p-4">
@@ -357,7 +481,6 @@ const MainPlaygroundPage = () => {
     );
   }
 
-  // No template data
   if (!templateData) {
     return (
       <div className="flex flex-col items-center justify-center h-[calc(100vh-4rem)] p-4">
@@ -391,7 +514,6 @@ const MainPlaygroundPage = () => {
           <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4">
             <SidebarTrigger className="-ml-1" />
             <Separator orientation="vertical" className="mr-2 h-4" />
-
             <div className="flex flex-1 items-center gap-2">
               <div className="flex flex-col flex-1">
                 <h1 className="text-sm font-medium">
@@ -402,7 +524,6 @@ const MainPlaygroundPage = () => {
                   {hasUnsavedChanges && " • Unsaved changes"}
                 </p>
               </div>
-
               <div className="flex items-center gap-1">
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -417,7 +538,6 @@ const MainPlaygroundPage = () => {
                   </TooltipTrigger>
                   <TooltipContent>Save (Ctrl+S)</TooltipContent>
                 </Tooltip>
-
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
@@ -429,15 +549,15 @@ const MainPlaygroundPage = () => {
                       <Save className="h-4 w-4" /> All
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent>Save All (Ctrl+Shift+S)</TooltipContent>
+                  <TooltipContent>Save All</TooltipContent>
                 </Tooltip>
-
                 <ToggleAI
-                  isEnabled={aiSuggestions.isEnabled}
-                  onToggle={aiSuggestions.toggleEnabled}
-                  suggestionLoading={aiSuggestions.isLoading}
+                  isEnabled={isAIEnabled}
+                  onToggle={setIsAIEnabled}
+                  suggestionLoading={false}
+                  fileContext={fileContext}
+                  onApplyFileChanges={handleApplyFileChanges}
                 />
-
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button size="sm" variant="outline">
@@ -497,7 +617,6 @@ const MainPlaygroundPage = () => {
                           </TabsTrigger>
                         ))}
                       </TabsList>
-
                       {openFiles.length > 1 && (
                         <Button
                           size="sm"
@@ -514,37 +633,27 @@ const MainPlaygroundPage = () => {
                 <div className="flex-1">
                   <ResizablePanelGroup className="h-full">
                     <ResizablePanel defaultSize={isPreviewVisible ? 50 : 100}>
+                      {/* FIXED: Passing isAIEnabled properly to PlaygroundEditor */}
                       <PlaygroundEditor
                         activeFile={activeFile}
                         content={activeFile?.content || ""}
                         onContentChange={handleContentChange}
-                        suggestion={aiSuggestions.suggestion}
-                        suggestionLoading={aiSuggestions.isLoading}
-                        suggestionPosition={aiSuggestions.position}
-                        onAcceptSuggestion={(editor, monaco) =>
-                          aiSuggestions.acceptSuggestion(editor, monaco)
-                        }
-                        onRejectSuggestion={(editor) =>
-                          aiSuggestions.rejectSuggestion(editor)
-                        }
-                        onTriggerSuggestion={(type, editor) =>
-                          aiSuggestions.fetchSuggestion(type, editor)
-                        }
+                        isAIEnabled={isAIEnabled}
                       />
                     </ResizablePanel>
-
                     {isPreviewVisible && (
                       <>
                         <ResizableHandle />
                         <ResizablePanel defaultSize={50}>
                           <WebContainerPreview
-                            lastSaveTime={lastSaveTime}
                             templateData={templateData}
                             instance={instance}
                             writeFileSync={writeFileSync}
                             isLoading={containerLoading}
+                            loadingStep={loadingStep}
                             error={containerError}
-                            serverUrl={serverUrl!}
+                            serverUrl={serverUrl}
+                            saveCount={saveCount}
                           />
                         </ResizablePanel>
                       </>

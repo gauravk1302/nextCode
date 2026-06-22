@@ -1,172 +1,118 @@
-import { isLastDayOfMonth } from "date-fns";
-import { useState, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 
-
-interface AISuggestionsState {
-    suggestion: string | null;
-    isLoading: boolean;
-    position: { line: number; column: number } | null;
-    decoration: string[];
-    isEnabled: boolean;
+// Hum purana interface maintain kar rahe hain taaki tere editor page par errors na aayein
+interface UseAISuggestionsReturn {
+  isEnabled: boolean;
+  toggleEnabled: () => void;
+  fetchSuggestion: (type: string, editor: any) => Promise<void>;
+  acceptSuggestion: (editor: any, monaco: any) => void;
+  rejectSuggestion: (editor: any) => void;
+  clearSuggestion: (editor: any) => void;
 }
 
-interface UseAISuggestionsReturn extends AISuggestionsState {
-    toggleEnabled: () => void;
-    fetchSuggestion: (type: string, editor: any) => Promise<void>;
-    acceptSuggestion: (editor: any, monaco: any) => void;
-    rejectSuggestion: (editor: any) => void;
-    clearSuggestion: (editor: any) => void;
-}
+export const useAISuggestions = (monaco: any, editor: any, isAIEnabled: boolean): UseAISuggestionsReturn => {
+  const [isEnabled, setIsEnabled] = useState<boolean>(true);
+  const providerRef = useRef<any>(null);
 
-export const useAISuggestions = (): UseAISuggestionsReturn => {
-    const [state, setState] = useState<AISuggestionsState>({
-        suggestion: null,
-        isLoading: false,
-        position: null,
-        decoration: [],
-        isEnabled: true,
-    });
-
-    const toggleEnabled = useCallback(() => {
-        setState((prev) => ({ ...prev, isEnabled: !prev.isEnabled }))
-    }, [])
-
-    const fetchSuggestion = useCallback(async (type: string, editor: any) => {
-        setState((currentState) => {
-
-            if (!currentState.isEnabled) {
-                return currentState
-            }
-
-            if (!editor) {
-                return currentState
-            }
-
-            const model = editor.getModel();
-            const cursorPosition = editor.getPosition()
-
-            if (!model || !cursorPosition) {
-                return currentState
-            }
-
-            const newState = { ...currentState, isLoading: true };
-
-            (async () => {
-                try {
-                    const payload = {
-                        fileContent: model.getValue(),
-                        cursorLine: cursorPosition.lineNumber - 1,
-                        cursorColumn: cursorPosition.column - 1,
-                        suggestionType: type
-                    }
-
-                    const response = await fetch("/api/code-completion", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify(payload)
-                    })
-                    if (!response.ok) {
-                        throw new Error(`API responded with status ${response.status}`);
-                    }
-
-                    const data = await response.json()
-
-                    if (data.suggestion) {
-                        const suggestionText = data.suggestion.trim();
-                        setState((prev) => ({
-                            ...prev,
-                            suggestion: suggestionText,
-                            position: {
-                                line: cursorPosition.lineNumber,
-                                column: cursorPosition.column
-                            },
-                            isLoading: false
-                        }))
-                    }
-                    else {
-                        console.warn("No suggestion received from API.");
-                        setState((prev) => ({ ...prev, isLoading: false }));
-                    }
-                } catch (error) {
-                    console.error("Error fetching code suggestion:", error);
-                    setState((prev) => ({ ...prev, isLoading: false }));
-                }
-            })();
-
-            return newState
-        })
-    }, [])
-
-
-    const acceptSuggestion = useCallback(() => {
-        (editor: any, monaco: any) => {
-            setState((currentState) => {
-                if (!currentState.suggestion || !currentState.position || !editor || !monaco) {
-                    return currentState;
-                }
-
-                const { line, column } = currentState.position;
-                const sanitizedSuggestion = currentState.suggestion.replace(/^\d+:\s*/gm, "");
-
-                editor.executeEdits("", [
-                    {
-                        range: new monaco.Range(line, column, line, column),
-                        text: sanitizedSuggestion,
-                        forceMoveMarkers: true,
-                    }
-                ]);
-
-                if(editor && currentState.decoration.length > 0){
-                    editor.deltaDecorations(currentState.decoration , [])
-                }
-
-                return {
-                    ...currentState,
-                    suggestion:null,
-                    position:null,
-                    decoration:[]
-                }
-            })
-        }
-    }, [])
-
-    const rejectSuggestion = useCallback((editor:any)=>{
-            setState((currentState)=>{
-                 if(editor && currentState.decoration.length > 0){
-                    editor.deltaDecorations(currentState.decoration , [])
-                }
-
-                return {
-                    ...currentState,
-                    suggestion:null,
-                    position:null,
-                    decoration:[]
-                }
-            })
-    },[]);
- 
-    const clearSuggestion = useCallback((editor: any) => {
-    setState((currentState) => {
-      if (editor && currentState.decoration.length > 0) {
-        editor.deltaDecorations(currentState.decoration, []);
-      }
-      return {
-        ...currentState,
-        suggestion: null,
-        position: null,
-        decoration: [],
-      };
-    });
+  const toggleEnabled = useCallback(() => {
+    setIsEnabled((prev) => !prev);
   }, []);
 
+  useEffect(() => {
+    // Agar monaco, editor ready nahi hain ya AI toggle off hai, toh provider hata do
+    if (!monaco || !editor || !isEnabled) {
+      if (providerRef.current) {
+        providerRef.current.dispose();
+        providerRef.current = null;
+      }
+      return;
+    }
+
+    // Monaco ka native Ghost Text Provider (Tab-to-accept)
+    providerRef.current = monaco.languages.registerInlineCompletionsProvider("*", {
+      provideInlineCompletions: async (model: any, position: any, context: any, token: any) => {
+        // 1. Debounce (Rate limiting prevent karne ke liye)
+        await new Promise((resolve) => setTimeout(resolve, 600));
+        if (token.isCancellationRequested) return { items: [] };
+
+        // 2. Sliding Window Context (Puri file ki jagah sirf aas-paas ka code)
+        const startLine = Math.max(1, position.lineNumber - 50);
+        const endLine = Math.min(model.getLineCount(), position.lineNumber + 20);
+
+        const prefix = model.getValueInRange({
+          startLineNumber: startLine,
+          startColumn: 1,
+          endLineNumber: position.lineNumber,
+          endColumn: position.column,
+        });
+
+        const suffix = model.getValueInRange({
+          startLineNumber: position.lineNumber,
+          startColumn: position.column,
+          endLineNumber: endLine,
+          endColumn: model.getLineMaxColumn(endLine),
+        });
+
+        try {
+          // 3. Optimized API hit
+          const response = await fetch("/api/code-completion", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ 
+              prefix, 
+              suffix, 
+              language: model.getLanguageId() 
+            }),
+          });
+
+          if (!response.ok) throw new Error("API failed");
+
+          const data = await response.json();
+
+          // 4. Ghost text return karna
+          if (data.suggestion && !token.isCancellationRequested) {
+            return {
+              items: [
+                {
+                  insertText: data.suggestion,
+                  range: new monaco.Range(
+                    position.lineNumber,
+                    position.column,
+                    position.lineNumber,
+                    position.column
+                  ),
+                },
+              ],
+            };
+          }
+        } catch (error) {
+          console.error("AI Auto-completion error:", error);
+        }
+
+        return { items: [] };
+      },
+      // ✅ FIX: Added both required cleanup methods to prevent Monaco crash
+      freeInlineCompletions: () => {}, 
+      disposeInlineCompletions: () => {}, 
+    });
+
+    return () => {
+      if (providerRef.current) {
+        providerRef.current.dispose();
+      }
+    };
+  }, [monaco, editor, isEnabled]);
+
+  // Purane manual functions ab empty rahenge kyunki Monaco native API sab sambhal rahi hai
+  const noOp = useCallback(() => {}, []);
+  const fetchSuggestion = useCallback(async () => {}, []);
 
   return {
-    ...state,
+    isEnabled,
     toggleEnabled,
     fetchSuggestion,
-    acceptSuggestion,
-    rejectSuggestion,
-    clearSuggestion
-  }
-
-}
+    acceptSuggestion: noOp,
+    rejectSuggestion: noOp,
+    clearSuggestion: noOp,
+  };
+};

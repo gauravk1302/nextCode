@@ -1,5 +1,3 @@
-//here we are managing the template files and template folder side bar of the playground  
-
 import { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
 
@@ -18,20 +16,16 @@ interface UsePlaygroundReturn {
   isLoading: boolean;
   error: string | null;
   loadPlayground: () => Promise<void>;
-  //Here we are basically going to pass the id and this ID should going to call our backend and get the data for us
   saveTemplateData: (data: TemplateFolder) => Promise<void>;
 }
-// Here we are basically going to pass the id and this ID should going to call our backend and get the data 
 
 export const usePlayground = (id: string): UsePlaygroundReturn => {
-  const [playgroundData, setPlaygroundData] = useState<PlaygroundData | null>(
-    null,
-  );
+  const [playgroundData, setPlaygroundData] = useState<PlaygroundData | null>(null);
   const [templateData, setTemplateData] = useState<TemplateFolder | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
- const loadPlayground = useCallback(async () => {
+  const loadPlayground = useCallback(async () => {
     if (!id) return;
 
     try {
@@ -42,15 +36,16 @@ export const usePlayground = (id: string): UsePlaygroundReturn => {
       setPlaygroundData(data);
       const rawContent = data?.content;
 
+      // DB mein saved content hai toh wahi use karo — fast load
       if (rawContent) {
         const parsedContent =
           typeof rawContent === "string" ? JSON.parse(rawContent) : rawContent;
         setTemplateData(parsedContent);
-        toast.success("Playground Loaded Successfully");
+        toast.success("Playground loaded successfully");
         return;
       }
 
-      // load the template from the api if not in saved content on the database
+      // Pehli baar — API se fresh template load karo
       const res = await fetch(`/api/template/${id}`);
       if (!res.ok) throw new Error(`Failed to load template: ${res.status}`);
 

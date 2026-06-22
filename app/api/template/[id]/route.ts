@@ -7,10 +7,14 @@ import { templatePaths } from "@/lib/template";
 import path from "path";
 import fs from "fs/promises";
 import { NextRequest } from "next/server";
+import { TemplateFolder } from "@/modules/playground/lib/path-to-json";
+
+// ✅ YEH ADD KAR — module level cache
+const templateCache = new Map<string, TemplateFolder>();
 
 function validateJsonStructure(data: unknown): boolean {
     try {
-        JSON.parse(JSON.stringify(data)); // Ensures it's serializable
+        JSON.parse(JSON.stringify(data));
         return true;
     } catch (error) {
         console.error("Invalid JSON structure:", error);
@@ -22,7 +26,6 @@ export async function GET(
     request: NextRequest,
     { params }: { params: Promise<{ id: string }> }
 ) {
-
     const { id } = await params;
 
     if (!id) {
@@ -30,27 +33,28 @@ export async function GET(
     }
 
     const playgroundResult = await sql`
-  SELECT *
-  FROM playgrounds
-  WHERE id = ${id}
-  LIMIT 1
-`;
+        SELECT * FROM playgrounds WHERE id = ${id} LIMIT 1
+    `;
 
     const playground = playgroundResult[0];
-
     if (!playground) {
         return Response.json({ error: "Playground not found" }, { status: 404 });
     }
 
     const templateKey = playground.template as keyof typeof templatePaths;
-    const templatePath = templatePaths[templateKey]
-
-    console.log("template value from DB:", playground.template);
-    console.log("templatePaths keys:", Object.keys(templatePaths));
-    console.log("resolved path:", templatePath);
+    const templatePath = templatePaths[templateKey];
 
     if (!templatePath) {
         return Response.json({ error: "Invalid template" }, { status: 404 });
+    }
+
+    //Cache check
+    if (templateCache.has(templateKey)) {
+        console.log(`Cache hit for template: ${templateKey}`);
+        return Response.json({
+            success: true,
+            templateJson: templateCache.get(templateKey)
+        }, { status: 200 });
     }
 
     try {
@@ -60,20 +64,18 @@ export async function GET(
         await saveTemplateStructureToJson(inputPath, outputFile);
         const result = await readTemplateStructureFromJson(outputFile);
 
-
-        // Validate the JSON structure before saving
         if (!validateJsonStructure(result.items)) {
             return Response.json({ error: "Invalid JSON structure" }, { status: 500 });
         }
 
-        await fs.unlink(outputFile)
+        await fs.unlink(outputFile);
 
+        // ✅ Cache mein save kar
+        templateCache.set(templateKey, result);
 
         return Response.json({ success: true, templateJson: result }, { status: 200 });
     } catch (error) {
         console.error("Error generating template JSON:", error);
         return Response.json({ error: "Failed to generate template" }, { status: 500 });
     }
-
-
 }

@@ -1,100 +1,94 @@
 import { NextRequest, NextResponse } from "next/server";
-import { neon } from "@neondatabase/serverless";
-
-interface ChatMessage {
-  role: "user" | "assistant";
-  content: string;
-}
-
-interface ChatRequest {
-  message: string;
-  history: ChatMessage[];
-  sessionId?: string;
-}
-
-async function generateAIResponse(messages: ChatMessage[]): Promise<string> {
-  const systemPrompt = `You are a helpful AI coding assistant. You help developers with:
-- Code explanations and debugging
-- Best practices and architecture advice  
-- Writing clean, efficient code
-- Troubleshooting errors
-- Code reviews and optimizations
-
-Always provide clear, practical answers. Use proper code formatting when showing examples.`;
-
-  const fullMessages = [{ role: "system", content: systemPrompt }, ...messages];
-  const prompt = fullMessages.map((msg) => `${msg.role}: ${msg.content}`).join("\n\n");
-
-  const response = await fetch("http://localhost:11434/api/generate", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: "codellama:latest",
-      prompt,
-      stream: false,
-      options: { temperature: 0.7, max_tokens: 1000, top_p: 0.9 },
-    }),
-  });
-
-  const data = await response.json();
-  if (!data.response) throw new Error("No response from AI model");
-  return data.response.trim();
-}
 
 export async function POST(req: NextRequest) {
   try {
-    const body: ChatRequest = await req.json();
-    const { message, history = [], sessionId } = body;
+    const body = await req.json();
+    const { message, history = [], files = {} } = body;
 
-    if (!message || typeof message !== "string") {
-      return NextResponse.json({ error: "Message is required" }, { status: 400 });
-    }
+    // Limit to top 2 files to save huge context usage.
+    const fileEntries = Object.entries(files).slice(0, 2);
+    const fileContext = fileEntries
+      .map(([path, content]) => {
+        // Safe soft-limit of 4000 characters per file to avoid 6000 TPM limit
+        const safeContent = (content as string).length > 4000 
+          ? (content as string).substring(0, 4000) + "\n\n// ... (rest of the file truncated due to AI token limits)"
+          : content;
+        return `File: ${path}\n\`\`\`\n${safeContent}\n\`\`\``;
+      })
+      .join("\n\n");
 
-    const validHistory = Array.isArray(history)
-      ? history.filter(
-          (msg) =>
-            msg &&
-            typeof msg.role === "string" &&
-            typeof msg.content === "string" &&
-            ["user", "assistant"].includes(msg.role)
-        )
-      : [];
+    const systemPrompt = `You are an expert AI coding assistant.
+You have access to the following project files:
 
-    const messages: ChatMessage[] = [
-      ...validHistory.slice(-10),
-      { role: "user", content: message },
+${fileContext ? `## Project Files:\n\n${fileContext}` : "No files provided."}
+
+CRITICAL RULES:
+1. You MUST return your response in valid JSON format exactly like this:
+{
+  "response": "Your conversational reply here.",
+  "fileChanges": {
+    "path/to/file.ext": "THE ENTIRE, COMPLETE UPDATED CODE FOR THIS FILE"
+  }
+}
+2. NEVER return partial code. You MUST return the FULL updated file content in 'fileChanges' based on the file content provided.
+3. If no files need changing, return an empty object {} for 'fileChanges'.
+4. Output RAW VALID JSON ONLY. Do not use markdown \`\`\` formatting.`;
+
+    // Limit history to last 4 messages to save tokens
+    const messages = [
+      { role: "system", content: systemPrompt },
+      ...history.slice(-4).map((msg: any) => ({ role: msg.role, content: msg.content })),
+      { role: "user", content: message }
     ];
 
-    const aiResponse = await generateAIResponse(messages);
+    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${process.env.GROQ_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: "llama-3.1-8b-instant",
+        messages,
+        // CRITICAL FIX: Reduced max_tokens to 2500 so Prompt + Max Tokens stays under 6000 TPM
+        max_tokens: 2500,
+        temperature: 0.2,
+        response_format: { type: "json_object" }
+      }),
+    });
 
-    // Optional: Save to Neon DB (chat history store karna ho toh)
-    if (sessionId) {
-      try {
-        const sql = neon(process.env.DATABASE_URL!);
-        await sql`
-          INSERT INTO chat_messages (session_id, role, content, created_at)
-          VALUES (${sessionId}, 'user', ${message}, NOW()),
-                 (${sessionId}, 'assistant', ${aiResponse}, NOW())
-        `;
-      } catch (dbErr) {
-        // DB error pe chat fail mat karo — silently log karo
-        console.error("[CHAT_DB_SAVE]", dbErr);
-      }
+    if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`Groq API Error: ${response.status} - ${errText}`);
+    }
+
+    const data = await response.json();
+    let responseText = data.choices?.[0]?.message?.content || "{}";
+
+    // Robust JSON Cleanup (Just in case LLM adds markdown)
+    responseText = responseText.trim();
+    if (responseText.startsWith("```")) {
+      responseText = responseText.replace(/^```(?:json)?\n?/i, "").replace(/\n?```$/i, "");
+    }
+
+    let parsedData;
+    try {
+      parsedData = JSON.parse(responseText);
+    } catch (e) {
+      console.error("JSON Parse Error. Raw text from AI:", responseText);
+      throw new Error("AI returned invalid JSON structure.");
     }
 
     return NextResponse.json({
-      response: aiResponse,
-      timestamp: new Date().toISOString(),
+      response: parsedData.response || "Done.",
+      fileChanges: parsedData.fileChanges || {},
+      model: "llama-3.1-8b-instant",
     });
 
-  } catch (error) {
+  } catch (error: any) {
     console.error("[CHAT_API_ERROR]", error);
     return NextResponse.json(
-      {
-        error: "Failed to generate AI response",
-        details: error instanceof Error ? error.message : "Unknown error",
-        timestamp: new Date().toISOString(),
-      },
+      { error: "Failed to generate response", message: error.message }, 
       { status: 500 }
     );
   }

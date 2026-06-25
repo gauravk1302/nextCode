@@ -4,7 +4,8 @@
       alt="Vue logo"
       width="200"
       height="200"
-      src="https://vuejs.org/images/logo.png"
+      src="/vue-logo.png"
+"
     />
     <HelloWorld msg="Welcome to Your Vue.js App" />
   </div>

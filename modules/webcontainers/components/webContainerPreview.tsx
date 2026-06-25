@@ -26,7 +26,6 @@ const STEPS = [
   "Starting development server",
 ];
 
-// ← Scalable: URL bar alag component
 const PreviewToolbar: React.FC<{
   serverUrl: string;
   currentPath: string;
@@ -58,11 +57,8 @@ const PreviewToolbar: React.FC<{
     onNavigate(path);
   };
 
-  const displayUrl = `localhost${currentPath}`;
-
   return (
     <div className="flex items-center gap-1.5 px-2 py-1.5 border-b bg-zinc-900/80 backdrop-blur-sm">
-      {/* Nav buttons */}
       <Button
         variant="ghost"
         size="sm"
@@ -90,7 +86,6 @@ const PreviewToolbar: React.FC<{
         <RotateCw className="h-3.5 w-3.5" />
       </Button>
 
-      {/* URL Bar */}
       <form onSubmit={handleSubmit} className="flex-1 flex items-center">
         <div className="flex-1 flex items-center gap-1.5 bg-zinc-800/60 border border-zinc-700/50 rounded-md px-2 py-1 h-7">
           <Globe className="h-3 w-3 text-zinc-500 shrink-0" />
@@ -105,7 +100,6 @@ const PreviewToolbar: React.FC<{
         </div>
       </form>
 
-      {/* Open external */}
       <Button
         variant="ghost"
         size="sm"
@@ -119,56 +113,51 @@ const PreviewToolbar: React.FC<{
   );
 };
 
-// ← Scalable: Loading steps alag component
 const LoadingSteps: React.FC<{
   loadingStep: string;
   instance: WebContainer | null;
 }> = ({ loadingStep, instance }) => {
   const terminalRef = useRef<any>(null);
   const currentStepIndex = STEPS.indexOf(loadingStep);
+  const [elapsed, setElapsed] = useState(0);
+
+  useEffect(() => {
+    const timer = setInterval(() => setElapsed((prev) => prev + 1), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   return (
     <div className="h-full flex flex-col">
       <div className="w-full max-w-md p-6 m-5 rounded-lg bg-white dark:bg-zinc-800 shadow-sm mx-auto">
         <h3 className="text-lg font-semibold mb-6 text-center">Setting up environment</h3>
+        <p className="text-xs text-center text-zinc-400 mb-4">⏱ {elapsed}s elapsed</p>
+        
+        {loadingStep === "Installing dependencies" && elapsed > 30 && (
+          <div className="mb-4 p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg">
+            <p className="text-xs text-amber-400 text-center">⏳ Heavy framework detected — this may take 3-5 minutes.</p>
+          </div>
+        )}
+
         <div className="space-y-4">
           {STEPS.map((step, index) => {
             const isComplete = currentStepIndex > index;
             const isActive = currentStepIndex === index;
             return (
               <div key={step} className="flex items-center gap-3">
-                {isComplete ? (
-                  <CheckCircle className="h-5 w-5 text-green-500" />
-                ) : isActive ? (
-                  <Loader2 className="h-5 w-5 animate-spin text-blue-500" />
-                ) : (
-                  <div className="h-5 w-5 rounded-full border-2 border-gray-300" />
-                )}
-                <span className={`text-sm font-medium ${
-                  isComplete ? "text-green-600" :
-                  isActive ? "text-blue-600" :
-                  "text-gray-400"
-                }`}>
-                  {step}
-                </span>
+                {isComplete ? <CheckCircle className="h-5 w-5 text-green-500" /> : isActive ? <Loader2 className="h-5 w-5 animate-spin text-blue-500" /> : <div className="h-5 w-5 rounded-full border-2 border-gray-300" />}
+                <span className={`text-sm font-medium ${isComplete ? "text-green-600" : isActive ? "text-blue-600" : "text-gray-400"}`}>{step}</span>
               </div>
             );
           })}
         </div>
       </div>
-      <div className="flex-1 p-4">
-        <TerminalComponent
-          ref={terminalRef}
-          webContainerInstance={instance}
-          theme="dark"
-          className="h-full"
-        />
+      <div className="flex-1 p-4 overflow-hidden">
+        <TerminalComponent ref={terminalRef} webContainerInstance={instance} theme="dark" className="h-full" />
       </div>
     </div>
   );
 };
 
-// ← Main component
 const WebContainerPreview: React.FC<WebContainerPreviewProps> = ({
   error,
   instance,
@@ -179,40 +168,27 @@ const WebContainerPreview: React.FC<WebContainerPreviewProps> = ({
 }) => {
   const terminalRef = useRef<any>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
-
-  // Navigation state
   const [currentPath, setCurrentPath] = useState("/");
-  const [history, setHistory] = useState<string[]>(["/"]); // ← scalable history stack
+  const [history, setHistory] = useState<string[]>(["/"]);
   const [historyIndex, setHistoryIndex] = useState(0);
   const [isTerminalOpen, setIsTerminalOpen] = useState(true);
 
   const canGoBack = historyIndex > 0;
   const canGoForward = historyIndex < history.length - 1;
 
-  // Navigate to path
   const navigateTo = useCallback((path: string) => {
-  if (!iframeRef.current || !serverUrl) return;
+    if (!iframeRef.current || !serverUrl) return;
+    const cleanPath = path.startsWith("/") ? path : `/${path}`;
+    const baseUrl = serverUrl.replace(/\/$/, "");
+    const fullUrl = `${baseUrl}${cleanPath}`;
+    const newHistory = history.slice(0, historyIndex + 1);
+    newHistory.push(cleanPath);
+    setHistory(newHistory);
+    setHistoryIndex(newHistory.length - 1);
+    setCurrentPath(cleanPath);
+    iframeRef.current.src = fullUrl;
+  }, [serverUrl, history, historyIndex]);
 
-  // Path ko clean karo (ensure it starts with /)
-  const cleanPath = path.startsWith("/") ? path : `/${path}`;
-  
-  // Base URL ko clean karo (ensure it DOES NOT end with /)
-  const baseUrl = serverUrl.replace(/\/$/, "");
-  
-  const fullUrl = `${baseUrl}${cleanPath}`;
-
-  // History update
-  const newHistory = history.slice(0, historyIndex + 1);
-  newHistory.push(cleanPath);
-  setHistory(newHistory);
-  setHistoryIndex(newHistory.length - 1);
-  setCurrentPath(cleanPath);
-
-  // Directly set src
-  iframeRef.current.src = fullUrl;
-}, [serverUrl, history, historyIndex]);
-
-  // Back
   const goBack = useCallback(() => {
     if (!canGoBack || !iframeRef.current || !serverUrl) return;
     const newIndex = historyIndex - 1;
@@ -222,7 +198,6 @@ const WebContainerPreview: React.FC<WebContainerPreviewProps> = ({
     iframeRef.current.src = serverUrl + path;
   }, [canGoBack, historyIndex, history, serverUrl]);
 
-  // Forward
   const goForward = useCallback(() => {
     if (!canGoForward || !iframeRef.current || !serverUrl) return;
     const newIndex = historyIndex + 1;
@@ -232,20 +207,17 @@ const WebContainerPreview: React.FC<WebContainerPreviewProps> = ({
     iframeRef.current.src = serverUrl + path;
   }, [canGoForward, historyIndex, history, serverUrl]);
 
-  // Refresh
   const refresh = useCallback(() => {
     if (!iframeRef.current || !serverUrl) return;
     iframeRef.current.src = serverUrl + currentPath;
   }, [serverUrl, currentPath]);
 
-  // saveCount change pe refresh
   useEffect(() => {
     if (iframeRef.current && serverUrl) {
       iframeRef.current.src = serverUrl + currentPath;
     }
   }, [saveCount]);
 
-  // serverUrl set hone pe initialize
   useEffect(() => {
     if (serverUrl && iframeRef.current) {
       setCurrentPath("/");
@@ -259,10 +231,7 @@ const WebContainerPreview: React.FC<WebContainerPreviewProps> = ({
     return (
       <div className="h-full flex items-center justify-center">
         <div className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 p-6 rounded-lg max-w-md">
-          <div className="flex items-center gap-2 mb-3">
-            <XCircle className="h-5 w-5" />
-            <h3 className="font-semibold">Error</h3>
-          </div>
+          <div className="flex items-center gap-2 mb-3"><XCircle className="h-5 w-5" /><h3 className="font-semibold">Error</h3></div>
           <p className="text-sm">{error}</p>
         </div>
       </div>
@@ -274,8 +243,7 @@ const WebContainerPreview: React.FC<WebContainerPreviewProps> = ({
   }
 
   return (
-    <div className="h-full flex flex-col bg-zinc-950">
-      {/* Toolbar */}
+    <div className="h-full flex flex-col bg-zinc-950 overflow-hidden">
       <PreviewToolbar
         serverUrl={serverUrl}
         currentPath={currentPath}
@@ -287,8 +255,7 @@ const WebContainerPreview: React.FC<WebContainerPreviewProps> = ({
         canGoForward={canGoForward}
       />
 
-      {/* iframe */}
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 w-full relative overflow-hidden">
         <iframe
           ref={iframeRef}
           src={serverUrl}
@@ -297,28 +264,25 @@ const WebContainerPreview: React.FC<WebContainerPreviewProps> = ({
         />
       </div>
 
-      {/* Terminal — collapsible */}
       <div className={cn(
-        "border-t border-zinc-800 transition-all duration-200",
+        "flex flex-col border-t border-zinc-800 transition-all duration-200 shrink-0",
         isTerminalOpen ? "h-48" : "h-8"
       )}>
         <div
-          className="h-8 flex items-center justify-between px-3 bg-zinc-900/80 cursor-pointer select-none"
+          className="h-8 flex items-center justify-between px-3 bg-zinc-900/80 cursor-pointer select-none border-b border-zinc-800"
           onClick={() => setIsTerminalOpen(prev => !prev)}
         >
           <span className="text-xs text-zinc-400 font-mono">Terminal</span>
           <span className="text-xs text-zinc-500">{isTerminalOpen ? "▼" : "▲"}</span>
         </div>
-        {isTerminalOpen && (
-          <div className="h-[calc(100%-2rem)]">
-            <TerminalComponent
-              ref={terminalRef}
-              webContainerInstance={instance}
-              theme="dark"
-              className="h-full"
-            />
-          </div>
-        )}
+        <div className={cn("flex-1 overflow-hidden", !isTerminalOpen && "hidden")}>
+          <TerminalComponent
+            ref={terminalRef}
+            webContainerInstance={instance}
+            theme="dark"
+            className="h-full"
+          />
+        </div>
       </div>
     </div>
   );

@@ -1,3 +1,16 @@
+// State:
+// - templateData    → current file tree
+// - openFiles       → tab mein khuli files
+// - activeFileId    → active tab
+
+// Operations:
+// - openFile / closeFile / closeAllFiles
+// - handleAddFile / handleAddFolder
+// - handleDeleteFile / handleDeleteFolder
+// - handleRenameFile / handleRenameFolder
+// - updateFileContent → editor mein type karne pe
+
+
 import { create } from "zustand";
 import { toast } from "sonner";
 
